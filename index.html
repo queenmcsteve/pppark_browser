@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dog Territory Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            touch-action: none;
+            background-color: #87CEAA;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+            touch-action: none;
+        }
+        #gameInfo {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .meter {
+            width: 100%;
+            height: 15px;
+            background-color: #ddd;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+        .meter-fill {
+            height: 100%;
+            border-radius: 5px;
+        }
+        #healthFill {
+            background-color: #f44;
+        }
+        #waterFill {
+            background-color: #44f;
+        }
+        #territoryFill {
+            background-color: #ff4;
+        }
+        #startScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+        }
+        #startButton {
+            padding: 15px 30px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        #gameOverScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+        }
+        #restartButton {
+            padding: 15px 30px;
+            font-size: 18px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="gameInfo">
+        <div>Health:</div>
+        <div class="meter"><div id="healthFill" class="meter-fill"></div></div>
+        <div>Water:</div>
+        <div class="meter"><div id="waterFill" class="meter-fill"></div></div>
+        <div>Territory: <span id="territoryPercent">0%</span></div>
+        <div class="meter"><div id="territoryFill" class="meter-fill"></div></div>
+    </div>
+    <div id="startScreen">
+        <h1>Dog Territory Game</h1>
+        <p>Tilt your phone to move the dog. Tap the dog to make him pee and mark territory.</p>
+        <p>Follow smell trails to find food and water.</p>
+        <button id="startButton">Start Game</button>
+    </div>
+    <div id="gameOverScreen">
+        <h1>Game Over</h1>
+        <p>Your dog is taking a nap!</p>
+        <p>Territory Controlled: <span id="finalScore">0%</span></p>
+        <button id="restartButton">Play Again</button>
+    </div>
+
+    <script>
+        // Game variables
+        let canvas, ctx;
+        let dog = {
+            x: 0, y: 0,
+            width: 30, height: 30,
+            speed: 1.5,
+            defaultSpeed: 1.5,
+            followingSpeed: 3,
+            health: 100,
+            maxHealth: 100,
+            water: 100,
+            maxWater: 100,
+            direction: { x: 0, y: 0 },
+            followingSmell: null,
+            isPooping: false,
+            img: new Image()
+        };
+        dog.img.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iI2I4ODQzMyIvPjxjaXJjbGUgY3g9IjM1IiBjeT0iNDAiIHI9IjUiIGZpbGw9IiMwMDAiLz48Y2lyY2xlIGN4PSI2NSIgY3k9IjQwIiByPSI1IiBmaWxsPSIjMDAwIi8+PGNpcmNsZSBjeD0iNTAiIGN5PSI2MCIgcj0iMTAiIGZpbGw9IiM4ODU1MjIiLz48ZWxsaXBzZSBjeD0iNTAiIGN5PSI3MCIgcng9IjEwIiByeT0iNSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik0yMCAzNUMzMCAyNSA0MCAyMCA1MCAxNWM1IDAgMTUgNSAzMCAyMCIgc3Ryb2tlPSIjYjg4NDMzIiBzdHJva2Utd2lkdGg9IjEwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIGZpbGw9Im5vbmUiLz48L3N2Zz4=';
+
+        let foods = [];
+        let waterSources = [];
+        let smellParticles = [];
+        let peeSpots = [];
+        let peeClouds = [];
+        let territory = [];
+        let gridSize = 10;
+        let gridCols, gridRows;
+        let frameCount = 0;
+        let lastParticleEmit = 0;
+        let gameRunning = false;
+        let totalTerritory = 0;
+
+        // Helper function to resize canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        // Initialize game
+        function init() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            resizeCanvas();
+
+            // Initialize grid for territory calculation
+            gridCols = Math.ceil(canvas.width / gridSize);
+            gridRows = Math.ceil(canvas.height / gridSize);
+            territory = Array(gridRows).fill().map(() => Array(gridCols).fill(0));
+
+            // Position dog in the center
+            dog.x = canvas.width / 2 - dog.width / 2;
+            dog.y = canvas.height / 2 - dog.height / 2;
+
+            // Create initial food and water sources
+            createFoodSources(5);
+            createWaterSources(3);
+
+            document.getElementById('startButton').addEventListener('click', startGame);
+            document.getElementById('restartButton').addEventListener('click', restartGame);
+            canvas.addEventListener('click', handleTap);
+
+            // Draw the initial frame
+            draw();
+        }
+
+        function startGame() {
+            document.getElementById('startScreen').style.display = 'none';
+            gameRunning = true;
+            requestAnimationFrame(gameLoop);
+
+            // Setup device orientation for gyro controls
+            if (window.DeviceOrientationEvent) {
+                window.addEventListener('deviceorientation', handleOrientation);
+            } else {
+                alert("Your device doesn't support gyroscope controls.");
+            }
+        }
+
+        function restartGame() {
+            // Reset game state
+            dog.health = dog.maxHealth;
+            dog.water = dog.maxWater;
+            dog.x = canvas.width / 2 - dog.width / 2;
+            dog.y = canvas.height / 2 - dog.height / 2;
+            dog.direction = { x: 0, y: 0 };
+            dog.followingSmell = null;
+            dog.speed = dog.defaultSpeed;
+
+            // Clear game elements
+            foods = [];
+            waterSources = [];
+            smellParticles = [];
+            peeSpots = [];
+            peeClouds = [];
+            territory = Array(gridRows).fill().map(() => Array(gridCols).fill(0));
+            totalTerritory = 0;
+
+            // Create new food and water sources
+            createFoodSources(5);
+            createWaterSources(3);
+
+            // Hide game over screen
+            document.getElementById('gameOverScreen').style.display = 'none';
+            gameRunning = true;
+            requestAnimationFrame(gameLoop);
+        }
+
+        function createFoodSources(count) {
+            for (let i = 0; i < count; i++) {
+                foods.push({
+                    x: Math.random() * (canvas.width - 40) + 20,
+                    y: Math.random() * (canvas.height - 40) + 20,
+                    radius: 15,
+                    lastEmit: 0
+                });
+            }
+        }
+
+        function createWaterSources(count) {
+            for (let i = 0; i < count; i++) {
+                waterSources.push({
+                    x: Math.random() * (canvas.width - 40) + 20,
+                    y: Math.random() * (canvas.height - 40) + 20,
+                    radius: 20,
+                    lastEmit: 0
+                });
+            }
+        }
+
+        function emitSmellParticles() {
+            const now = Date.now();
+            
+            // Emit food smells
+            foods.forEach(food => {
+                if (now - food.lastEmit > 500) {
+                    const angle = Math.random() * Math.PI * 2;
+                    smellParticles.push({
+                        x: food.x,
+                        y: food.y,
+                        dx: Math.cos(angle) * 0.5,
+                        dy: Math.sin(angle) * 0.5,
+                        radius: 3,
+                        alpha: 1,
+                        type: 'food',
+                        source: food,
+                        history: [{x: food.x, y: food.y}]
+                    });
+                    food.lastEmit = now;
+                }
+            });
+            
+            // Emit water smells
+            waterSources.forEach(water => {
+                if (now - water.lastEmit > 700) {
+                    const angle = Math.random() * Math.PI * 2;
+                    smellParticles.push({
+                        x: water.x,
+                        y: water.y,
+                        dx: Math.cos(angle) * 0.5,
+                        dy: Math.sin(angle) * 0.5,
+                        radius: 3,
+                        alpha: 1,
+                        type: 'water',
+                        source: water,
+                        history: [{x: water.x, y: water.y}]
+                    });
+                    water.lastEmit = now;
+                }
+            });
+        }
+
+        function updateSmellParticles() {
+            for (let i = smellParticles.length - 1; i >= 0; i--) {
+                const particle = smellParticles[i];
+                
+                // Move particles
+                particle.x += particle.dx;
+                particle.dy += (Math.random() - 0.5) * 0.1; // Add some vertical randomness
+                particle.dx += (Math.random() - 0.5) * 0.1; // Add some horizontal randomness
+                particle.y += particle.dy;
+                
+                // Record history for trail (limit to 10 points)
+                if (frameCount % 5 === 0) {
+                    particle.history.push({x: particle.x, y: particle.y});
+                    if (particle.history.length > 10) {
+                        particle.history.shift();
+                    }
+                }
+                
+                // Fade out
+                particle.alpha -= 0.002;
+                
+                // Remove when too faded
+                if (particle.alpha <= 0) {
+                    smellParticles.splice(i, 1);
+                    continue;
+                }
+                
+                // Bounce off edges
+                if (particle.x < 0 || particle.x > canvas.width) {
+                    particle.dx *= -1;
+                }
+                if (particle.y < 0 || particle.y > canvas.height) {
+                    particle.dy *= -1;
+                }
+            }
+        }
+
+        function handleOrientation(event) {
+            if (!gameRunning) return;
+            
+            // Get gamma (left to right) and beta (front to back) rotation
+            const gamma = event.gamma;  // -90 to 90, left to right
+            const beta = event.beta;   // -180 to 180, front to back
+            
+            // Only update direction if dog is not following a smell
+            if (!dog.followingSmell) {
+                // Convert degrees to movement speed
+                dog.direction.x = (gamma / 45) * dog.speed;
+                dog.direction.y = (beta / 45) * dog.speed;
+                
+                // Limit max speed
+                const magnitude = Math.sqrt(dog.direction.x * dog.direction.x + dog.direction.y * dog.direction.y);
+                if (magnitude > dog.speed) {
+                    dog.direction.x = (dog.direction.x / magnitude) * dog.speed;
+                    dog.direction.y = (dog.direction.y / magnitude) * dog.speed;
+                }
+            }
+        }
+
+        function handleTap(event) {
+            if (!gameRunning) return;
+            
+            // Get tap position
+            const rect = canvas.getBoundingClientRect();
+            const tapX = event.clientX - rect.left;
+            const tapY = event.clientY - rect.top;
+            
+            // Check if tap is on the dog
+            if (
+                tapX >= dog.x && tapX <= dog.x + dog.width &&
+                tapY >= dog.y && tapY <= dog.y + dog.height
+            ) {
+                // Make dog pee if there's water available
+                if (dog.water > 0) {
+                    createPeeSpot(dog.x + dog.width / 2, dog.y + dog.height / 2);
+                    dog.water -= 5;
+                    if (dog.water < 0) dog.water = 0;
+                }
+            }
+        }
+
+        function createPeeSpot(x, y) {
+            // Check if there's already a pee spot at this location
+            let existingSpot = peeSpots.find(spot => 
+                Math.hypot(spot.x - x, spot.y - y) < 20
+            );
+            
+            if (existingSpot) {
+                // Increase existing spot's strength
+                existingSpot.strength += 1;
+                existingSpot.radius = Math.min(50, 10 + existingSpot.strength * 5);
+                
+                // Update or create pee cloud
+                updatePeeClouds(existingSpot);
+            } else {
+                // Create new pee spot
+                const newSpot = {
+                    x, y,
+                    radius: 10,
+                    strength: 1
+                };
+                peeSpots.push(newSpot);
+                
+                // Create new pee cloud
+                createPeeCloud(newSpot);
+            }
+            
+            // Calculate territory coverage
+            calculateTerritory();
+        }
+
+        function createPeeCloud(peeSpot) {
+            peeClouds.push({
+                x: peeSpot.x,
+                y: peeSpot.y,
+                radius: peeSpot.radius * 2,
+                alpha: 0.3,
+                source: peeSpot
+            });
+        }
+
+        function updatePeeClouds(peeSpot) {
+            // Find cloud connected to this spot
+            const cloud = peeClouds.find(c => c.source === peeSpot);
+            if (cloud) {
+                cloud.radius = peeSpot.radius * 2;
+            }
+            
+            // Check for cloud merges
+            for (let i = 0; i < peeClouds.length; i++) {
+                for (let j = i + 1; j < peeClouds.length; j++) {
+                    const cloud1 = peeClouds[i];
+                    const cloud2 = peeClouds[j];
+                    
+                    const distance = Math.hypot(cloud1.x - cloud2.x, cloud1.y - cloud2.y);
+                    
+                    if (distance < cloud1.radius + cloud2.radius) {
+                        // Merge clouds
+                        const biggerCloud = cloud1.radius > cloud2.radius ? cloud1 : cloud2;
+                        const smallerCloud = cloud1.radius > cloud2.radius ? cloud2 : cloud1;
+                        
+                        // Increase radius of bigger cloud
+                        biggerCloud.radius = Math.max(biggerCloud.radius, smallerCloud.radius + distance/2);
+                        
+                        // Remove smaller cloud
+                        const index = peeClouds.indexOf(smallerCloud);
+                        if (index > -1) {
+                            peeClouds.splice(index, 1);
+                        }
+                        
+                        // Restart check to account for new merges
+                        i = -1;
+                        break;
+                    }
+                }
+            }
+        }
+
+        function calculateTerritory() {
+            // Reset territory grid
+            territory = Array(gridRows).fill().map(() => Array(gridCols).fill(0));
+            
+            // Mark territory for each pee cloud
+            peeClouds.forEach(cloud => {
+                const centerGridX = Math.floor(cloud.x / gridSize);
+                const centerGridY = Math.floor(cloud.y / gridSize);
+                const radius = Math.ceil(cloud.radius / gridSize);
+                
+                // Mark grid cells within the cloud radius
+                for (let y = centerGridY - radius; y <= centerGridY + radius; y++) {
+                    for (let x = centerGridX - radius; x <= centerGridX + radius; x++) {
+                        if (x >= 0 && x < gridCols && y >= 0 && y < gridRows) {
+                            const distance = Math.hypot(x - centerGridX, y - centerGridY) * gridSize;
+                            if (distance <= cloud.radius) {
+                                territory[y][x] = 1;
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Check for enclosed areas and fill them
+            fillEnclosedAreas();
+            
+            // Calculate total territory percentage
+            countTerritoryPercentage();
+        }
+
+        function fillEnclosedAreas() {
+            // Create a copy of the territory grid for flood filling
+            const visited = Array(gridRows).fill().map(() => Array(gridCols).fill(false));
+            
+            // First mark all edge cells as visited
+            for (let x = 0; x < gridCols; x++) {
+                floodFill(x, 0, visited);
+                floodFill(x, gridRows - 1, visited);
+            }
+            
+            for (let y = 0; y < gridRows; y++) {
+                floodFill(0, y, visited);
+                floodFill(gridCols - 1, y, visited);
+            }
+            
+            // Any unvisited cells are enclosed - mark them as territory
+            for (let y = 0; y < gridRows; y++) {
+                for (let x = 0; x < gridCols; x++) {
+                    if (!visited[y][x] && territory[y][x] === 0) {
+                        territory[y][x] = 2; // Mark as enclosed territory
+                    }
+                }
+            }
+        }
+
+        function floodFill(x, y, visited) {
+            // Base cases: out of bounds, already visited, or territory
+            if (x < 0 || y < 0 || x >= gridCols || y >= gridRows || 
+                visited[y][x] || territory[y][x] === 1) {
+                return;
+            }
+            
+            // Mark as visited
+            visited[y][x] = true;
+            
+            // Recursively check adjacent cells
+            floodFill(x + 1, y, visited);
+            floodFill(x - 1, y, visited);
+            floodFill(x, y + 1, visited);
+            floodFill(x, y - 1, visited);
+        }
+
+        function countTerritoryPercentage() {
+            let count = 0;
+            const total = gridRows * gridCols;
+            
+            for (let y = 0; y < gridRows; y++) {
+                for (let x = 0; x < gridCols; x++) {
+                    if (territory[y][x] > 0) {
+                        count++;
+                    }
+                }
+            }
+            
+            totalTerritory = Math.round((count / total) * 100);
+            
+            // Update UI
+            document.getElementById('territoryPercent').textContent = totalTerritory + '%';
+            document.getElementById('territoryFill').style.width = totalTerritory + '%';
+        }
+
+        function updateDog() {
+            if (dog.followingSmell) {
+                // Follow smell trail
+                const dx = dog.followingSmell.source.x - dog.x - dog.width/2;
+                const dy = dog.followingSmell.source.y - dog.y - dog.height/2;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < 20) {
+                    // Reached the source
+                    if (dog.followingSmell.type === 'food') {
+                        // Remove food source and restore health
+                        const index = foods.indexOf(dog.followingSmell.source);
+                        if (index > -1) {
+                            foods.splice(index, 1);
+                            dog.health = Math.min(dog.maxHealth, dog.health + 30);
+                            createFoodSources(1); // Create a new food somewhere else
+                        }
+                    } else if (dog.followingSmell.type === 'water') {
+                        // Refill water at water source
+                        dog.water = Math.min(dog.maxWater, dog.water + 50);
+                    }
+                    
+                    dog.followingSmell = null;
+                    dog.speed = dog.defaultSpeed;
+                } else {
+                    // Move towards source
+                    dog.direction.x = (dx / distance) * dog.speed;
+                    dog.direction.y = (dy / distance) * dog.speed;
+                }
+            }
+            
+            // Move dog
+            dog.x += dog.direction.x;
+            dog.y += dog.direction.y;
+            
+            // Keep dog within bounds
+            if (dog.x < 0) dog.x = 0;
+            if (dog.y < 0) dog.y = 0;
+            if (dog.x > canvas.width - dog.width) dog.x = canvas.width - dog.width;
+            if (dog.y > canvas.height - dog.height) dog.y = canvas.height - dog.height;
+            
+            // Check for collision with smell particles
+            if (!dog.followingSmell) {
+                for (let i = 0; i < smellParticles.length; i++) {
+                    const particle = smellParticles[i];
+                    const distance = Math.hypot(
+                        (dog.x + dog.width/2) - particle.x,
+                        (dog.y + dog.height/2) - particle.y
+                    );
+                    
+                    if (distance < dog.width/2 + particle.radius) {
+                        // Start following this smell
+                        dog.followingSmell = particle;
+                        dog.speed = dog.followingSpeed;
+                        break;
+                    }
+                }
+            }
+            
+            // Decrease health over time
+            if (frameCount % 60 === 0) {
+                dog.health -= 0.5;
+                
+                // Game over if health reaches zero
+                if (dog.health <= 0) {
+                    gameOver();
+                }
+            }
+            
+            // Update UI
+            document.getElementById('healthFill').style.width = (dog.health / dog.maxHealth * 100) + '%';
+            document.getElementById('waterFill').style.width = (dog.water / dog.maxWater * 100) + '%';
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('finalScore').textContent = totalTerritory + '%';
+            document.getElementById('gameOverScreen').style.display = 'flex';
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+            
+            // Update game state
+            frameCount++;
+            
+            // Emit smell particles
+            if (frameCount % 30 === 0) {
+                emitSmellParticles();
+            }
+            
+            updateSmellParticles();
+            updateDog();
+            
+            // Draw everything
+            draw();
+            
+            // Continue loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw territory grid
+            for (let y = 0; y < gridRows; y++) {
+                for (let x = 0; x < gridCols; x++) {
+                    if (territory[y][x] === 1) {
+                        // Direct territory
+                        ctx.fillStyle = 'rgba(255, 240, 110, 0.2)';
+                        ctx.fillRect(x * gridSize, y * gridSize, gridSize, gridSize);
+                    } else if (territory[y][x] === 2) {
+                        // Enclosed territory
+                        ctx.fillStyle = 'rgba(255, 230, 100, 0.3)';
+                        ctx.fillRect(x * gridSize, y * gridSize, gridSize, gridSize);
+                    }
+                }
+            }
+            
+            // Draw pee spots
+            peeSpots.forEach(spot => {
+                const gradient = ctx.createRadialGradient(
+                    spot.x, spot.y, 0,
+                    spot.x, spot.y, spot.radius
+                );
+                gradient.addColorStop(0, 'rgba(255, 255, 0, 0.7)');
+                gradient.addColorStop(1, 'rgba(255, 230, 0, 0)');
+                
+                ctx.beginPath();
+                ctx.arc(spot.x, spot.y, spot.radius, 0, Math.PI * 2);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+            });
+            
+            // Draw pee clouds
+            peeClouds.forEach(cloud => {
+                ctx.beginPath();
+                ctx.arc(cloud.x, cloud.y, cloud.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 100, ${cloud.alpha})`;
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.1)';
+                ctx.stroke();
+            });
+            
+            // Draw smell particles and trails
+            smellParticles.forEach(particle => {
+                // Draw trail
+                if (particle.history.length > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(particle.history[0].x, particle.history[0].y);
+                    
+                    for (let i = 1; i < particle.history.length; i++) {
+                        ctx.lineTo(particle.history[i].x, particle.history[i].y);
+                    }
+                    
+                    ctx.strokeStyle = particle.type === 'food' ? 
+                        `rgba(200, 100, 0, ${particle.alpha * 0.5})` : 
+                        `rgba(50, 150, 255, ${particle.alpha * 0.5})`;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+                
+                // Draw particle
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+                ctx.fillStyle = particle.type === 'food' ? 
+                    `rgba(255, 150, 0, ${particle.alpha})` : 
+                    `rgba(100, 200, 255, ${particle.alpha})`;
+                ctx.fill();
+            });
+            
+            // Draw food sources
+            foods.forEach(food => {
+                ctx.beginPath();
+                ctx.arc(food.x, food.y, food.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#8B4513';
+                ctx.fill();
+                
+                // Draw bone shape
+                ctx.beginPath();
+                ctx.moveTo(food.x - 10, food.y - 5);
+                ctx.lineTo(food.x - 5, food.y - 10);
+                ctx.lineTo(food.x + 5, food.y - 10);
+                ctx.lineTo(food.x + 10, food.y - 5);
+                ctx.lineTo(food.x + 10, food.y + 5);
+                ctx.lineTo(food.x + 5, food.y + 10);
+                ctx.lineTo(food.x - 5, food.y + 10);
+                ctx.lineTo(food.x - 10, food.y + 5);
+                ctx.closePath();
+                ctx.fillStyle = '#D2B48C';
+                ctx.fill();
+            });
+            
+            // Draw water sources
+            waterSources.forEach(water => {
+                ctx.beginPath();
+                ctx.arc(water.x, water.y, water.radius, 0, Math.PI * 2);
+                ctx.fillStyle = '#4169E1';
+                ctx.fill();
+                
+                // Draw water ripples
+                ctx.beginPath();
+                ctx.arc(water.x, water.y, water.radius * 0.7, 0, Math.PI);
+                ctx.strokeStyle = '#87CEFA';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.arc(water.x, water.y, water.radius * 0.4, 0, Math.PI);
+                ctx.stroke();
+            });
+            
+            // Draw dog
+            if (dog.img.complete) {
+                ctx.drawImage(dog.img, dog.x, dog.y, dog.width, dog.height);
+            } else {
+                // Fallback if image doesn't load
+                ctx.fillStyle = '#b88433';
+                ctx.fillRect(dog.x, dog.y, dog.width, dog.height);
+                
+                // Draw face
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(dog.x + dog.width * 0.3, dog.y + dog.height * 0.3, dog.width * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(dog.x + dog.width * 0.7, dog.y + dog.height * 0.3, dog.width * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(dog.x + dog.width * 0.5, dog.y + dog.height * 0.6, dog.width * 0.15, 0, Math.PI * 2);
+                ctx.fillStyle = '#885522';
+                ctx.fill();
+            }
+        }
+
+        // Start game on window load
+        window.addEventListener('load', function() {
+            init();
+            // Add event listener for window resize
+            window.addEventListener('resize', function() {
+                resizeCanvas();
+                gridCols = Math.ceil(canvas.width / gridSize);
+                gridRows = Math.ceil(canvas.height / gridSize);
+                territory = Array(gridRows).fill().map(() => Array(gridCols).fill(0));
+                calculateTerritory();
+            });
+        });
+    </script>
+</body>
+</html>
